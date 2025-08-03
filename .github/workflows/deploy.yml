@@ -1,0 +1,55 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+      - deployment
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: package-lock.json
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+      env:
+        COSMOS_CONNECTION_STRING: ${{ secrets.COSMOS_CONNECTION_STRING }}
+        FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+
+    - name: Deploy to Azure
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ secrets.AZURE_BACKEND_APP_NAME }}
+        publish-profile: ${{ secrets.AZURE_BACKEND_PUBLISH_PROFILE }}
+        package: .
+      env:
+        NODE_ENV: ${{ secrets.NODE_ENV }} 
+
+    - name: Azure CLI Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        auth-type: SERVICE_PRINCIPAL
+
+    - name: Set Azure Web App settings
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          az webapp config appsettings set --name ${{ secrets.AZURE_BACKEND_APP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --settings COSMOS_CONNECTION_STRING="${{ secrets.COSMOS_CONNECTION_STRING }}" FRONTEND_URL="${{ secrets.FRONTEND_URL }}" PORT=8080 NODE_ENV=production WEBSITE_NODE_DEFAULT_VERSION="~18" SCM_DO_BUILD_DURING_DEPLOYMENT=false WEBSITE_RUN_FROM_PACKAGE=1 
