@@ -42,7 +42,7 @@ app.get('/', (req: express.Request, res: express.Response) => {
 });
 
 app.get('/api/hello', (req: express.Request, res: express.Response) => {
-  res.json({ message: 'Hello from the dummy API!' });
+  res.json({ message: 'Hola from the dummy API!' });
 });
 
 // Get all items with optional filtering
