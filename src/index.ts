@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { initializeDatabase, collection, isDatabaseConnected, startConnectionMonitor } from './config/database';
+import { slackClient, SlackMessage, isSlackConfigured } from './config/slack';
 
 dotenv.config();
 
@@ -10,6 +11,8 @@ console.log('Environment variables loaded:');
 console.log('COSMOS_CONNECTION_STRING:', process.env.COSMOS_CONNECTION_STRING ? 'SET' : 'NOT SET');
 console.log('PORT:', process.env.PORT || '3000 (default)');
 console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET');
+console.log('SLACK_BOT_TOKEN:', process.env.SLACK_BOT_TOKEN ? 'SET' : 'NOT SET');
+console.log('SLACK_SIGNING_SECRET:', process.env.SLACK_SIGNING_SECRET ? 'SET' : 'NOT SET');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -296,11 +299,105 @@ app.delete('/api/items/:id', requireDatabase, async (req: express.Request, res: 
   }
 });
 
+// Slack API endpoints
+app.post('/api/slack/send-message', async (req: express.Request, res: express.Response) => {
+  try {
+    if (!isSlackConfigured()) {
+      return res.status(400).json({ error: 'Slack not configured. Please set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET.' });
+    }
+
+    const { channel, text, blocks }: SlackMessage = req.body;
+
+    if (!channel || !text) {
+      return res.status(400).json({ error: 'Channel and text are required' });
+    }
+
+    const result = await slackClient.chat.postMessage({
+      channel,
+      text,
+      blocks
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Message sent successfully',
+      messageId: result.ts,
+      channel: result.channel 
+    });
+  } catch (error) {
+    console.error('Error sending Slack message:', error);
+    res.status(500).json({ error: 'Failed to send message to Slack' });
+  }
+});
+
+app.get('/api/slack/channels', async (req: express.Request, res: express.Response) => {
+  try {
+    if (!isSlackConfigured()) {
+      return res.status(400).json({ error: 'Slack not configured. Please set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET.' });
+    }
+
+    const result = await slackClient.conversations.list({
+      types: 'public_channel,private_channel',
+      limit: 100
+    });
+
+    const channels = result.channels?.map(channel => ({
+      id: channel.id,
+      name: channel.name,
+      is_channel: channel.is_channel,
+      is_group: channel.is_group,
+      is_private: channel.is_private,
+      is_member: channel.is_member
+    })) || [];
+
+    res.json({ channels });
+  } catch (error) {
+    console.error('Error fetching Slack channels:', error);
+    res.status(500).json({ error: 'Failed to fetch Slack channels' });
+  }
+});
+
+app.get('/api/slack/users', async (req: express.Request, res: express.Response) => {
+  try {
+    if (!isSlackConfigured()) {
+      return res.status(400).json({ error: 'Slack not configured. Please set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET.' });
+    }
+
+    const result = await slackClient.users.list({
+      limit: 100
+    });
+
+    const users = result.members?.map(user => ({
+      id: user.id,
+      name: user.name,
+      real_name: user.real_name,
+      display_name: user.profile?.display_name,
+      email: user.profile?.email,
+      is_bot: user.is_bot,
+      deleted: user.deleted
+    })).filter(user => !user.deleted && !user.is_bot) || [];
+
+    res.json({ users });
+  } catch (error) {
+    console.error('Error fetching Slack users:', error);
+    res.status(500).json({ error: 'Failed to fetch Slack users' });
+  }
+});
+
+app.get('/api/slack/status', (req: express.Request, res: express.Response) => {
+  res.json({
+    configured: isSlackConfigured(),
+    bot_token: process.env.SLACK_BOT_TOKEN ? 'SET' : 'NOT SET',
+    signing_secret: process.env.SLACK_SIGNING_SECRET ? 'SET' : 'NOT SET'
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req: express.Request, res: express.Response) => {
   res.json({
     status: 'ok',
     database: isDatabaseConnected() ? 'connected' : 'disconnected',
+    slack: isSlackConfigured() ? 'configured' : 'not configured',
     timestamp: new Date().toISOString()
   });
 });
