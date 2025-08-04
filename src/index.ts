@@ -9,6 +9,7 @@ dotenv.config();
 console.log('Environment variables loaded:');
 console.log('COSMOS_CONNECTION_STRING:', process.env.COSMOS_CONNECTION_STRING ? 'SET' : 'NOT SET');
 console.log('PORT:', process.env.PORT || '3000 (default)');
+console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET');
 
 const app = express();
 const port = process.env.PORT || 3000;
